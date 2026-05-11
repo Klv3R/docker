@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Cyber-Runner</title>
+    <style>
+        body { background: #020205; color: #00ffcc; font-family: 'Courier New', monospace; text-align: center; overflow: hidden; margin: 0; }
+        
+        #cloud-header { 
+            display: flex; justify-content: space-around; background: #000; 
+            border-bottom: 1px solid #00ffcc; padding: 8px; font-size: 11px;
+            letter-spacing: 1px; color: #555;
+        }
+        .stat-value { color: #00ffcc; text-shadow: 0 0 5px #00ffcc; }
+        .blink { animation: blink-animation 1s steps(2, start) infinite; }
+        @keyframes blink-animation { to { visibility: hidden; } }
+
+        .pulse-text {
+            color: #00ffcc; font-weight: bold; font-size: 20px; margin-top: 25px;
+            text-shadow: 0 0 10px #00ffcc; animation: pulse-fade 1.5s infinite ease-in-out;
+        }
+
+        @keyframes pulse-fade {
+            0% { opacity: 0.3; transform: scale(0.98); }
+            50% { opacity: 1; transform: scale(1.02); }
+            100% { opacity: 0.3; transform: scale(0.98); }
+        }
+
+        #game-container { position: relative; display: inline-block; margin-top: 10px; touch-action: none; }
+        canvas { border: 1px solid #1a1a2e; background: #050010; box-shadow: 0 0 50px rgba(128, 0, 255, 0.3); cursor: pointer; max-width: 95%; height: auto; }
+        #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; background: rgba(0,0,0,0.85); z-index: 10; pointer-events: none; }
+        #input-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none; flex-direction: column; justify-content: center; align-items: center; background: rgba(0,0,0,0.9); z-index: 20; pointer-events: auto; }
+
+        .neon-input { background: #000; border: 1px solid #ff00ff; color: #ff00ff; padding: 12px; font-family: 'Courier New', monospace; text-align: center; font-size: 18px; outline: none; box-shadow: 0 0 10px #ff00ff; margin-bottom: 15px; width: 220px; }
+        .neon-btn { background: #000; border: 1px solid #00ffcc; color: #00ffcc; padding: 10px 25px; cursor: pointer; font-family: 'Courier New', monospace; box-shadow: 0 0 5px #00ffcc; }
+
+        #milestone-toast { position: absolute; top: 50px; right: -300px; background: rgba(0, 255, 204, 0.1); border-left: 4px solid #00ffcc; color: #00ffcc; padding: 10px 20px; font-weight: bold; text-shadow: 0 0 10px #00ffcc; transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); pointer-events: none; z-index: 30; opacity: 0; }
+        #milestone-toast.active { right: 20px; opacity: 1; }
+
+        .leaderboard { margin: 15px auto; width: 350px; border: 1px solid #ff00ff; padding: 10px; background: rgba(5,0,5,0.9); box-shadow: 0 0 20px rgba(255,0,255,0.2); }
+        .entry { display: flex; justify-content: space-between; color: #ff00ff; font-size: 0.85em; text-shadow: 0 0 5px #ff00ff; border-bottom: 1px solid #300030; }
+        #live-score { font-size: 28px; color: #00ffcc; text-shadow: 0 0 10px #00ffcc; margin: 10px 0; }
+        #ticker { background: #000; color: #ff00ff; padding: 5px; width: 600px; margin: 0 auto; border: 1px solid #111; font-size: 11px; overflow: hidden; white-space: nowrap; }
+        .scrolling { display: inline-block; animation: scroll 25s linear infinite; }
+        @keyframes scroll { from { transform: translateX(100%); } to { transform: translateX(-100%); } }
+    </style>
+</head>
+<body>
+    <div id="cloud-header">
+        <div>REGION: <span class="stat-value">ME-CENTRAL-1 (RIYADH)</span></div>
+        <div>INSTANCE ID: <span class="stat-value">i-0af2399026</span></div>
+        <div>STATUS: <span class="stat-value blink">● RUNNING</span></div>
+        <div>PING: <span class="stat-value" id="ping-val">50ms</span></div>
+    </div>
+
+    <div id="live-score">POINTS: 0</div>
+    
+    <div id="game-container">
+        <canvas id="gameCanvas" width="600" height="200"></canvas>
+        <div id="overlay">
+            <h2 style="color: #ff00ff; text-shadow: 0 0 15px #ff00ff;">SYSTEM_READY</h2>
+            <p style="font-size: 10px; color: #555;">ENVIRONMENT: MEGA_CITY | RIYADH_REGION | REDIS_LINK: READY</p>
+            <p class="pulse-text">Press SPACE or TAP to play</p>
+        </div>
+        <div id="input-overlay">
+            <h3 style="color: #00ffcc;">SYSTEM_FAULT</h3>
+            <p style="font-size: 11px; color: #ff00ff;">UPLOAD SCORE TO CLOUD_DATABASE?</p>
+            <input type="text" id="player-name" class="neon-input" placeholder="USERNAME" maxlength="15">
+            <button class="neon-btn" id="sync-btn">SAVE SCORE</button>
+        </div>
+        <div id="milestone-toast">CLOUD_SYNC_ACTIVE</div>
+    </div>
+
+    <div id="ticker"><div class="scrolling" id="ticker-text">[CLOUD_LOG]: SCALING_GROUP_ACTIVE... LOAD_BALANCER_STABLE... REDIS_CACHING_99.9%_HIT_RATE... CONTAINER_HEALTH_CHECK_PASSED...</div></div>
+    
+    <div class="leaderboard">
+        <h3>GLOBAL LEADERBOARD</h3>
+        <div id="score-list">FETCHING_DATA...</div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('game-container');
+        const overlay = document.getElementById('overlay');
+        const inputOverlay = document.getElementById('input-overlay');
+        const syncBtn = document.getElementById('sync-btn');
+        const toast = document.getElementById('milestone-toast');
+        const pingDisplay = document.getElementById('ping-val');
+        
+        let score = 0, gameActive = false, frame = 0, obstacles = [], particles = [];
+        let rainDrops = [], petals = [], shakeFrames = 0, nextMilestone = 1000;
+        let milestoneFlash = 0, wind = 2;
+
+        let player = { x: 50, w: 20, h: 20, dy: 0, jump: -12, ground: 180, y: 180 };
+
+        const stars = [];
+        for(let i=0; i<80; i++) stars.push({ x: Math.random()*600, y: Math.random()*150, size: Math.random()*1.2, b: Math.random()*Math.PI });
+        for(let i=0; i<110; i++) rainDrops.push({ x: Math.random()*650, y: Math.random()*200, l: 8+Math.random()*12, v: 9+Math.random()*5 });
+        for(let i=0; i<25; i++) petals.push({ x: Math.random()*600, y: Math.random()*200, s: 1.5+Math.random()*2, vx: -1-Math.random(), vy: 0.5+Math.random(), r: Math.random()*Math.PI });
+
+        const cityWidth = 5000;
+        const mainBuildings = [];
+        const backBuildings = [];
+        const purples = ["#1a0033", "#2b0057", "#3d007a"];
+        const signColors = ["#ff00ff", "#00ffcc", "#ffff00", "#ff3300"];
+
+        for(let i=0; i<75; i++) {
+            backBuildings.push({ x: (cityWidth/75)*i + Math.random()*80, width: 35+Math.random()*45, height: 45+Math.random()*65 });
+            mainBuildings.push({
+                x: (cityWidth/75)*i + Math.random()*45, width: 50+Math.random()*60, height: 75+Math.random()*115,
+                color: purples[Math.floor(Math.random()*3)],
+                sign: Math.random() > 0.6 ? { type: Math.random()>0.5?'vertical':'square', color: signColors[Math.floor(Math.random()*4)], offsetY: 20+Math.random()*40 } : null
+            });
+        }
+
+        function updatePing() {
+            let p = (Math.random() < 0.15) ? Math.floor(80 + Math.random() * 20) : Math.floor(50 + Math.random() * 30);
+            pingDisplay.innerText = `${p}ms`;
+        }
+        setInterval(updatePing, 2000);
+
+        function drawHolograms() {
+            ctx.save();
+            let fishX = (400 - (frame * 0.5)) % 800;
+            let fishY = 60 + Math.sin(frame/40) * 10;
+            ctx.globalAlpha = 0.2; ctx.shadowBlur = 25; ctx.shadowColor = "#ff3300";
+            ctx.fillStyle = "#ff5500";
+            ctx.beginPath(); ctx.ellipse(fishX, fishY, 45, 18, Math.sin(frame/40)*0.1, 0, Math.PI*2); ctx.fill();
+            
+            let logoX = (150 - (frame * 0.3)) % 700;
+            ctx.strokeStyle = "#ff00ff"; ctx.lineWidth = 2; ctx.shadowBlur = 15; ctx.shadowColor = "#ff00ff";
+            ctx.beginPath();
+            for(let i=0; i<6; i++) { let a = (i * Math.PI * 2) / 6; ctx.lineTo(logoX + 25 * Math.cos(a), 50 + 25 * Math.sin(a) + Math.cos(frame/30)*5); }
+            ctx.closePath(); ctx.stroke();
+            ctx.restore();
+        }
+
+        function drawGrindRails() {
+            ctx.save();
+            ctx.strokeStyle = "#00e5ff"; ctx.lineWidth = 1.5; ctx.shadowBlur = 12; ctx.shadowColor = "#00e5ff";
+            ctx.globalAlpha = 0.4;
+            ctx.beginPath(); ctx.moveTo(-50, 100); ctx.bezierCurveTo(200, 40, 400, 140, 650, 70); ctx.stroke();
+            ctx.restore();
+        }
+
+        function drawCherryBlossoms() {
+            ctx.fillStyle = "#ffb7c5";
+            petals.forEach(p => {
+                ctx.beginPath(); ctx.ellipse(p.x, p.y, p.s, p.s/2, p.r + frame/50, 0, Math.PI*2); ctx.fill();
+                p.x += p.vx; p.y += p.vy; if(p.y > 200) p.y = -10; if(p.x < -10) p.x = 610;
+            });
+        }
+
+        function drawEnvironment() {
+            let skyGrad = ctx.createLinearGradient(0, 0, 0, 200);
+            skyGrad.addColorStop(0, "#08001a"); skyGrad.addColorStop(1, "#330066");
+            ctx.fillStyle = skyGrad; ctx.fillRect(0, 0, 600, 200);
+            
+            stars.forEach(s => {
+                let twinkle = Math.abs(Math.sin(frame/25 + s.b));
+                ctx.fillStyle = `rgba(255, 255, 255, ${0.1 + twinkle * 0.4})`;
+                ctx.fillRect((s.x - (frame * 0.04)) % 600, s.y, s.size, s.size);
+            });
+
+            ctx.fillStyle = "#0a001a";
+            let farX = (frame / 8) % cityWidth;
+            backBuildings.forEach(b => {
+                let xPos = b.x - farX; if (xPos < -100) xPos += cityWidth;
+                ctx.fillRect(xPos, 200 - b.height, b.width, b.height);
+            });
+
+            let fgX = (frame / 3) % cityWidth;
+            mainBuildings.forEach((b) => {
+                let xPos = b.x - fgX; if (xPos < -200) xPos += cityWidth;
+                if (xPos > 600) return;
+                ctx.fillStyle = b.color;
+                ctx.fillRect(xPos, 200 - b.height, b.width, b.height);
+                if (b.sign) {
+                    ctx.fillStyle = b.sign.color; ctx.shadowBlur = 8; ctx.shadowColor = b.sign.color;
+                    if (b.sign.type === 'vertical') ctx.fillRect(xPos + b.width - 8, 200 - b.height + b.sign.offsetY, 4, 30);
+                    else ctx.fillRect(xPos + 5, 200 - b.height + b.sign.offsetY, 12, 12);
+                    ctx.shadowBlur = 0;
+                }
+            });
+            
+            drawHolograms();
+            drawGrindRails();
+        }
+
+        function drawRain() {
+            wind = 1.5 + Math.sin(frame/180);
+            ctx.strokeStyle = 'rgba(180, 200, 255, 0.2)'; 
+            rainDrops.forEach(d => {
+                ctx.beginPath(); ctx.moveTo(d.x, d.y); ctx.lineTo(d.x - wind, d.y + d.l); ctx.stroke();
+                d.y += d.v; d.x -= wind; if (d.y > 195 || d.x < -30) { d.y = -d.l; d.x = Math.random()*650 + 20; }
+            });
+        }
+
+        function triggerMilestone(points) {
+            toast.innerText = `[SUCCESS]: ${points} PTS REACHED`; toast.classList.add('active'); milestoneFlash = 60;
+            setTimeout(() => { toast.classList.remove('active'); }, 3000);
+        }
+
+        function startGame() {
+            if (gameActive || inputOverlay.style.display === 'flex') return;
+            overlay.style.display = 'none'; gameActive = true; score = 0; obstacles = []; frame = 0; nextMilestone = 1000;
+            update();
+        }
+
+        function handleJump() {
+            if (!gameActive && inputOverlay.style.display !== 'flex') startGame();
+            else if (player.y === player.ground) player.dy = player.jump;
+        }
+
+        function update() {
+            if (!gameActive) return;
+            ctx.save();
+            if (shakeFrames > 0) { ctx.translate((Math.random()-0.5)*6, (Math.random()-0.5)*6); shakeFrames--; }
+            ctx.clearRect(0, 0, 600, 200);
+            
+            drawEnvironment();
+            drawRain();
+            drawCherryBlossoms();
+            
+            score++;
+            document.getElementById('live-score').innerText = `POINTS: ${score}`;
+            if (score >= nextMilestone) { triggerMilestone(nextMilestone); nextMilestone += 1000; }
+            
+            player.dy += 0.7; player.y += player.dy;
+            if (player.y > player.ground) { player.y = player.ground; player.dy = 0; }
+            
+            ctx.fillStyle = (milestoneFlash > 0) ? '#fff' : '#00ffcc';
+            ctx.shadowBlur = 15; ctx.shadowColor = (milestoneFlash > 0) ? '#fff' : '#00ffcc';
+            ctx.fillRect(player.x, player.y, player.w, player.h);
+            ctx.shadowBlur = 0;
+            if (milestoneFlash > 0) milestoneFlash--;
+
+            // --- THE ONLY CHANGED SECTION: OBSTACLE GENERATION ---
+            let spawnRate = Math.max(20, 50 - Math.floor(score / 800)); 
+            if (frame % spawnRate === 0) {
+                const types = [
+                    { w: 15, h: 55, c: '#ff00ff' }, // Tall (Need high jump)
+                    { w: 50, h: 18, c: '#00ccff' }, // Wide (Need long jump)
+                    { w: 20, h: 30, c: '#ffff00' }, // Normal
+                    { w: 12, h: 12, c: '#ff3300', extraSpeed: 2 } // Fast
+                ];
+                const pick = types[Math.floor(Math.random() * types.length)];
+                obstacles.push({ 
+                    x: 600, 
+                    w: pick.w, 
+                    h: pick.h, 
+                    c: pick.c, 
+                    speed: (7.5 + (score / 1200)) + (pick.extraSpeed || 0) 
+                });
+            }
+            
+            obstacles.forEach((o) => {
+                o.x -= o.speed; 
+                ctx.fillStyle = o.c; 
+                ctx.shadowBlur = 10; 
+                ctx.shadowColor = o.c;
+                ctx.fillRect(o.x, 200 - o.h, o.w, o.h);
+                ctx.shadowBlur = 0; // Reset blur so it doesn't bleed to the next drawing step
+                
+                if (player.x < o.x + o.w && player.x + player.w > o.x && player.y + player.h > 200 - o.h) { 
+                    gameActive = false; 
+                    inputOverlay.style.display = 'flex'; 
+                }
+            });
+
+            // Prevent memory leak by removing old obstacles once they go way off screen
+            if (obstacles.length > 0 && obstacles[0].x < -100) obstacles.shift();
+            // --------------------------------------------------------
+
+            ctx.restore();
+            frame++; if(gameActive) requestAnimationFrame(update);
+        }
+
+        syncBtn.onclick = async (e) => {
+            const name = document.getElementById('player-name').value || "ANON";
+            try { 
+                await fetch('/score', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name: name.toUpperCase(), score: score}) });
+            } catch(e) { console.log("Offline."); }
+            location.reload();
+        };
+
+        async function loadScores() {
+            try {
+                const res = await fetch('/leaderboard'); const data = await res.json();
+                const list = document.getElementById('score-list'); list.innerHTML = '';
+                for (let i = 0; i < data.length; i += 2) { list.innerHTML += `<div class="entry"><span>${data[i]}</span><span>${data[i+1]}</span></div>`; }
+            } catch (e) { document.getElementById('score-list').innerText = "CLOUD_OFFLINE"; }
+        }
+
+        window.addEventListener('keydown', (e) => { if (e.code === 'Space') { e.preventDefault(); handleJump(); } });
+container.addEventListener('touchstart', (e) => {
+    // If we are touching the input box or the button, let the phone handle it normally
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return;
+
+    // Otherwise, handle the jump and prevent scrolling
+    if (e.cancelable) e.preventDefault(); 
+    handleJump();
+}, { passive: false });        canvas.addEventListener('mousedown', (e) => { if (inputOverlay.style.display !== 'flex') handleJump(); });
+        
+        loadScores();
+        setInterval(loadScores, 5000);
+    </script>
+</body>
+</html>
